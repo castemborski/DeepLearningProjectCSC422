@@ -1,0 +1,125 @@
+CSC422 — Automated Learning and Data Analysis
+Project Report: Goal 1 — Training a Deep Learning Model
+Author: dkgencel
+Date: April 13, 2026
+================================================================================
+
+1. OVERVIEW
+--------------------------------------------------------------------------------
+This report summarizes the training of a Convolutional Neural Network (CNN) on
+the MNIST handwritten digit dataset using PyTorch. The goal was to reproduce a
+reference ConvNet implementation, then systematically vary two key hyperparame-
+ters — batch size and learning rate — to study their effect on training dynamics
+and final model performance.
+
+2. MODEL ARCHITECTURE
+--------------------------------------------------------------------------------
+The network (Net) follows a standard ConvNet design with two convolutional blocks
+followed by fully connected layers:
+
+  Input (1x28x28 grayscale image)
+    -> Conv2d(1, 32, kernel=3)  + ReLU
+    -> Conv2d(32, 64, kernel=3) + ReLU
+    -> MaxPool2d(kernel=2)
+    -> Dropout(p=0.25)
+    -> Flatten -> Linear(9216, 128) + ReLU
+    -> Dropout(p=0.5)
+    -> Linear(128, 10) -> log_softmax
+
+The first convolutional layer extracts low-level features (edges, strokes) with
+32 filters, and the second learns higher-level combinations with 64 filters.
+MaxPooling halves the spatial dimensions to reduce computation. Two dropout layers
+regularize the network to prevent overfitting. The final fully connected layers
+project the 9,216-dimensional flattened feature map to 10 class scores.
+
+The optimizer used was Adadelta with a StepLR learning rate scheduler (gamma=0.7,
+step_size=1), which decays the learning rate by 30% each epoch. All experiments
+used negative log-likelihood (NLL) loss and ran for 5 epochs on the standard
+MNIST split: 60,000 training images and 10,000 test images, normalized to
+mean=0.1307 and std=0.3081.
+
+3. EXPERIMENT 1 — VARYING BATCH SIZE (lr=1.0)
+--------------------------------------------------------------------------------
+Four batch sizes were evaluated while holding the learning rate fixed at 1.0.
+
+  Batch Size |  Ep1 Test Acc  |  Ep5 Train Loss  |  Ep5 Train Acc  | Ep5 Test Acc
+  -----------|----------------|------------------|-----------------|-------------
+      32      |    98.42%      |     0.0453       |    98.73%       |   98.90%
+      64      |    98.28%      |     0.0353       |    98.97%       |   99.15%
+     128      |    98.20%      |     0.0379       |    98.88%       |   99.07%
+     256      |    97.71%      |     0.0442       |    98.64%       |   98.90%
+
+Key observations:
+
+- Smaller batches (32) converge faster in early epochs. By epoch 1, batch=32
+  already reaches 98.42% test accuracy versus 97.71% for batch=256. This is
+  because smaller batches apply more gradient updates per epoch (1,875 updates
+  vs. 235 for batch=256), allowing the model to adapt more quickly.
+
+- However, batch=64 achieves the highest final test accuracy (99.15%), slightly
+  outperforming batch=32 (98.90%). This suggests that very small batches
+  introduce noisy gradient estimates that limit final performance, while a
+  moderate batch size balances update frequency with gradient quality.
+
+- Larger batches (128, 256) have higher initial loss due to fewer parameter
+  updates per epoch, but still converge to competitive accuracy by epoch 5.
+  Batch=256 plateau at 98.90%, matching batch=32 by the final epoch.
+
+- Training loss at epoch 5 is lowest for batch=64 (0.0353), confirming it as
+  the most effective configuration across this experiment group.
+
+4. EXPERIMENT 2 — VARYING LEARNING RATE (batch=64)
+--------------------------------------------------------------------------------
+Four learning rates were evaluated with batch size fixed at 64.
+
+  Learn. Rate |  Ep1 Test Acc  |  Ep5 Train Loss  |  Ep5 Train Acc  | Ep5 Test Acc
+  ------------|----------------|------------------|-----------------|-------------
+     0.1      |    97.43%      |     0.0721       |    97.89%       |   98.49%
+     0.5      |    98.41%      |     0.0396       |    98.83%       |   98.94%
+     1.0      |    98.28%      |     0.0353       |    98.97%       |   99.15%
+     2.0      |    98.39%      |     0.0434       |    98.76%       |   98.83%
+
+Key observations:
+
+- lr=0.1 is clearly too conservative for Adadelta on this task. It reaches only
+  98.49% test accuracy at epoch 5, with a training loss of 0.0721 — more than
+  twice that of lr=1.0. The model is still visibly learning at epoch 5 and has
+  not yet converged, suggesting it would need more epochs to reach competitive
+  accuracy.
+
+- lr=1.0 achieves the best test accuracy (99.15%) and lowest training loss
+  (0.0353). It converges quickly — reaching 98.28% by epoch 1 — and continues
+  improving steadily through epoch 5 without signs of instability.
+
+- lr=2.0 performs competitively in early epochs (98.39% at epoch 1) but falls
+  behind lr=1.0 by epoch 5 (98.83% vs. 99.15%). Its training loss at epoch 5
+  (0.0434) is also higher than lr=1.0 (0.0353), which may indicate that the
+  larger step size causes the optimizer to overshoot near convergence.
+
+- lr=0.5 sits between the two extremes, achieving 98.94% — close to lr=1.0 but
+  slightly below, indicating lr=1.0 is near the sweet spot for Adadelta on MNIST.
+
+5. ANALYSIS AND CONCLUSION
+--------------------------------------------------------------------------------
+Across all 8 configurations, the best-performing model used batch_size=64 and
+lr=1.0, achieving 99.15% test accuracy after 5 epochs. This configuration was
+saved as the best model for use in subsequent experiments.
+
+The results illustrate two well-known trade-offs in deep learning training:
+
+1. Batch size vs. convergence speed: Smaller batches converge faster per epoch
+   due to more frequent weight updates, but noisier gradients can limit final
+   performance. A moderate batch size (64) strikes the best balance.
+
+2. Learning rate magnitude: A learning rate that is too low (0.1) prevents the
+   model from converging within the allotted epochs. A rate that is too high
+   (2.0) may introduce oscillation near the optimum. The default lr=1.0
+   recommended for Adadelta on MNIST performs best here, confirming that
+   adaptive optimizers are sensitive to their initial learning rate scale.
+
+Overall, the CNN achieved strong performance across all settings (97.4%–99.2%),
+demonstrating that the architecture is well-suited to the MNIST task. The plots
+(batch_size_experiment.png, lr_experiment.png) show that training and test loss
+curves decrease smoothly across all configurations, with no evidence of
+overfitting, likely due to the dropout regularization in the network.
+================================================================================

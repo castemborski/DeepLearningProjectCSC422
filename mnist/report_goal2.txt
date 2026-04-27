@@ -1,0 +1,126 @@
+CSC422 — Automated Learning and Data Analysis
+Project Report: Goal 2 — Adversarial Attacks on a Deep Learning Model
+Author: dkgencel
+Date: April 27, 2026
+================================================================================
+
+1. OVERVIEW
+--------------------------------------------------------------------------------
+This report describes the implementation and evaluation of the Fast Gradient Sign
+Method (FGSM) adversarial attack on the best-performing CNN from Goal 1 (batch
+size=64, lr=1.0, 99.15% test accuracy on MNIST). FGSM is a one-step gradient-
+based white-box attack that constructs adversarial examples — imperceptibly
+perturbed inputs that cause a trained model to misclassify — by moving each input
+pixel in the direction that maximally increases the loss.
+
+2. METHODOLOGY
+--------------------------------------------------------------------------------
+2.1  Best Model Selection
+
+The model chosen for attack is the CNN from Goal 1 (mnist_cnn_best.pt): two
+convolutional layers (32 and 64 filters, kernel=3) followed by MaxPool, dropout,
+and two fully connected layers (9216→128→10). It achieves 99.15% test accuracy
+under no attack (epsilon=0), confirming it as the strongest checkpoint.
+
+2.2  FGSM Attack
+
+Given a correctly normalized input image x, its true label y, and the trained
+model f parameterized by weights θ, the adversarial example is:
+
+    x_adv = clip(x + ε · sign(∇_x L(f(x; θ), y)), x_min, x_max)
+
+where L is the NLL loss, ε is the attack budget (perturbation magnitude), and the
+clip ensures the perturbed image stays within the valid normalized pixel range for
+MNIST ([–0.4242, 2.8215], corresponding to original pixel values in [0, 1] with
+mean=0.1307 and std=0.3081). The sign of the gradient points in the direction that
+increases the loss fastest; even a tiny step of ε in that direction can flip the
+model's prediction.
+
+The attack is applied to all 10,000 MNIST test images at seven epsilon levels:
+ε ∈ {0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30}. For each image the loss is
+computed, backpropagated to the input, and the signed gradient is used to create
+the adversarial example. The model is then re-evaluated on the perturbed inputs.
+
+3. RESULTS
+--------------------------------------------------------------------------------
+3.1  Accuracy Under Attack
+
+  Epsilon (ε) |  Correct / 10,000  |  Test Accuracy
+  --------------|--------------------|--------------
+     0.00        |    9,915 / 10,000  |    99.15%
+     0.05        |    9,842 / 10,000  |    98.42%
+     0.10        |    9,759 / 10,000  |    97.59%
+     0.15        |    9,632 / 10,000  |    96.32%
+     0.20        |    9,482 / 10,000  |    94.82%
+     0.25        |    9,297 / 10,000  |    92.97%
+     0.30        |    9,046 / 10,000  |    90.46%
+
+The full accuracy-vs-epsilon curve is plotted in fgsm_accuracy_vs_epsilon.png.
+
+3.2  Visual Examples
+
+fgsm_examples.png shows five randomly selected test images at each of three
+representative epsilon levels (0.05, 0.15, 0.30), displaying the original image
+alongside its adversarial counterpart with model predictions for both. At
+ε=0.05 the perturbed images are visually identical to the originals; at ε=0.30
+a faint "salt-and-pepper" noise texture becomes visible yet the digits remain
+clearly recognizable to the human eye.
+
+4. ANALYSIS AND KEY FINDINGS
+--------------------------------------------------------------------------------
+4.1  Monotone accuracy degradation
+
+Model accuracy decreases monotonically as ε increases, falling from 99.15% at
+ε=0 to 90.46% at ε=0.30 — a total drop of 8.69 percentage points. The drop
+accelerates at higher epsilon: the step from ε=0.25 to ε=0.30 alone removes
+251 additional correct predictions.
+
+4.2  High robustness relative to the standard FGSM benchmark
+
+The PyTorch FGSM tutorial reports that a similar MNIST CNN collapses to roughly
+33% accuracy at ε=0.30. Our model retains 90.46%, indicating substantially
+higher adversarial robustness. Two factors contribute:
+
+  (a) Dropout regularization (p=0.25 and p=0.50) smooths the loss landscape,
+      reducing the magnitude and consistency of input-space gradients and
+      making a single gradient step less effective at crossing a decision
+      boundary.
+
+  (b) High clean accuracy (99.15% vs. ~98% in the tutorial) leaves a smaller
+      margin for the attack to exploit; already near-optimal decisions require
+      a larger perturbation to flip.
+
+4.3  FGSM attack limitations
+
+FGSM is a single-step, untargeted attack and is known to be among the weakest
+adversarial attacks available. Its effectiveness is bounded by the loss gradient
+at the clean input, which may not point toward the nearest decision boundary. More
+powerful iterative attacks (PGD, C&W) perform multiple gradient steps or optimize
+directly for misclassification distance and would achieve far larger accuracy
+drops at the same ε budget.
+
+4.4  Human-imperceptible perturbations cause measurable degradation
+
+Even at ε=0.05, where the adversarial images are visually indistinguishable from
+the originals, the attack already degrades accuracy by 0.73 percentage points
+(73 additional misclassifications). This demonstrates the core vulnerability of
+gradient-based models: small, structured perturbations that are invisible to
+humans can shift model confidence enough to change predictions.
+
+5. CONCLUSION
+--------------------------------------------------------------------------------
+This experiment demonstrates that FGSM adversarial attacks are effective against
+the MNIST CNN even at small perturbation budgets. The best model from Goal 1
+shows robustness that exceeds the standard FGSM benchmark, likely attributable to
+dropout regularization and high clean accuracy; nevertheless, accuracy degrades
+consistently and measurably across all ε values tested. The results illustrate
+both the practical risk of adversarial examples — small, imperceptible changes
+that cause misclassification — and the need for explicit adversarial training or
+certified defenses to close the remaining 8.69-point gap between clean and
+adversarial performance.
+
+Output files:
+  fgsm_attack.py               — implementation (FGSM + evaluation + plotting)
+  fgsm_accuracy_vs_epsilon.png — accuracy vs. epsilon curve
+  fgsm_examples.png            — original vs. adversarial example grids
+================================================================================
